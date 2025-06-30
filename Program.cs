@@ -6,8 +6,6 @@ using System.IO;
 using System.Text;
 
 
-
-
 namespace TextEditorApp
 {
     class Program
@@ -20,10 +18,6 @@ namespace TextEditorApp
         private string? lastSearchText = null;
 
         private Encoding currentEncoding = Encoding.UTF8; // default to UTF-8
-        // private Stack<string> undoStack = new Stack<string>(); //stack for the undo
-        // private Stack<string> redoStack = new Stack<string>(); //stack for the redo
-        //private bool stopHistory = false;
-
 
         public static void Main(string[] args)
         {
@@ -45,8 +39,8 @@ namespace TextEditorApp
 
             var vbox = new Box(Orientation.Vertical, 2);
             vbox.PackStart(CreateMenuBar(), false, false, 0);
-            var toolbar = CreateToolbar();
-            vbox.PackStart(toolbar, false, false, 0);
+            // var toolbar = CreateToolbar();
+            vbox.PackStart(CreateToolbar(), false, false, 0);
             vbox.PackStart(new Separator(Orientation.Horizontal), false, false, 0);
             vbox.PackStart(CreateEditorArea(), true, true, 0);
             vbox.PackStart(new Separator(Orientation.Horizontal), false, false, 0);
@@ -62,19 +56,90 @@ namespace TextEditorApp
             info.Title = "Information";
             info.Run();
 
-            // prime undo-history with empty text
-            //undoStack.Push(String.Empty);
             UpdateEncodingLabel();
+        }
+
+        
+
+        public MenuBar CreateMenuBar()  
+        {
+            // Menu bar
+            MenuBar menuBar = new MenuBar();
+
+            // File Menu
+            Menu fileMenu = new Menu();
+            MenuItem file = new MenuItem("File");
+            MenuItem open = new MenuItem("Open");
+            MenuItem save = new MenuItem("Save");
+            MenuItem quit = new MenuItem("Quit");
+
+            open.Activated += OnOpen;
+            save.Activated += OnSave;
+            quit.Activated += (sender, e) => Application.Quit();
+
+            fileMenu.Append(open);
+            fileMenu.Append(save);
+            fileMenu.Append(new SeparatorMenuItem());
+            fileMenu.Append(quit);
+
+            file.Submenu = fileMenu;
+
+            menuBar.Append(file);
+
+            // Encoding Menu
+            Menu EncodingMenu = new Menu();
+            MenuItem encoding = new MenuItem("Encoding");
+            MenuItem utf8 = new MenuItem("UTF-8");
+            MenuItem utf16 = new MenuItem("UTF-16");
+            MenuItem utf32 = new MenuItem("UTF-32");
+            MenuItem ascii = new MenuItem("ASCII");
+
+            utf8.Activated += OnUtf8;
+            utf16.Activated += OnUtf16;
+            utf32.Activated += OnUtf32;
+            ascii.Activated += OnAscii;
+
+            EncodingMenu.Append(utf8);
+            EncodingMenu.Append(utf16);
+            EncodingMenu.Append(utf32);
+            EncodingMenu.Append(ascii);
+
+            encoding.Submenu = EncodingMenu;
+            menuBar.Append(encoding);
+
+            return menuBar;
+        }
+
+        public Toolbar CreateToolbar()
+        {
+            var toolbar = new Toolbar
+            {
+                Style = ToolbarStyle.Icons
+            };
+
+            // add the color picker
+            ColorButton colorButton = new ColorButton
+            {
+                Rgba = new Gdk.RGBA { Red = 1, Green = 1, Blue = 1, Alpha = 0 },
+                UseAlpha = true
+            };
+            colorButton.ColorSet += OnColorSet;
+
+            ToolItem colorItem = new ToolItem();
+            colorItem.Add(colorButton);
+            toolbar.Add(colorItem);
+
+            return toolbar;
         }
 
         public Box CreateEditorArea()
         {
             Box hbox = new Box(Orientation.Horizontal, 6);
-            
+
 
             // Main TextView
             textView = new TextView { WrapMode = WrapMode.WordChar };
-            ScrolledWindow textScroll = new ScrolledWindow { HscrollbarPolicy = PolicyType.Never, VscrollbarPolicy = PolicyType.Automatic };
+            ScrolledWindow textScroll = new ScrolledWindow { HscrollbarPolicy = PolicyType.Automatic, VscrollbarPolicy = PolicyType.Automatic };
 
             textView.KeyPressEvent += (o, args) =>
             {
@@ -101,7 +166,9 @@ namespace TextEditorApp
             TextView lineCounter = new TextView
             {
                 Editable = false,
-                CursorVisible = false
+                CursorVisible = false,
+                Sensitive = false,
+
             };
             lineCounter.ModifyBg(StateType.Normal, new Gdk.Color(240, 240, 240)); // couldnt find a newer method and this works fine 
 
@@ -109,24 +176,36 @@ namespace TextEditorApp
 
             ScrolledWindow counterScroll = new ScrolledWindow
             {
-                HscrollbarPolicy = PolicyType.Never,
-                VscrollbarPolicy = PolicyType.Never
+                HscrollbarPolicy = PolicyType.Automatic,
+                VscrollbarPolicy = PolicyType.Automatic,   
             };
-            counterScroll.Add(lineCounter);
 
-            // Sync scrolling
+            
+
+
+
+            //Sync scrolling
             textScroll.Vadjustment.ValueChanged += (sender, e) =>
             {
                 counterScroll.Vadjustment.Value = textScroll.Vadjustment.Value;
             };
-
+            counterScroll.Add(lineCounter);
             // Update line numbers on text change
+            int previousLineCount = 0;
+
             textView.Buffer.Changed += (sender, e) =>
             {
-                int lineCount = textView.Buffer.LineCount;
-                string lines = string.Join("\n", Enumerable.Range(1, lineCount));
-                lineCounter.Buffer.Text = lines;
+                int currentLineCount = textView.Buffer.LineCount;
+
+                // Update only if line count changes
+                if (currentLineCount != previousLineCount)
+                {
+                    string lines = string.Join("\n", Enumerable.Range(1, currentLineCount));
+                    lineCounter.Buffer.Text = lines;
+                    previousLineCount = currentLineCount;
+                }
             };
+
 
             // Pack both views into hbox
             hbox.PackStart(counterScroll, false, false, 0);
@@ -134,8 +213,6 @@ namespace TextEditorApp
 
             return hbox;
         }
-
-
 
         // this is to create the status bar with search, line count, encoding and cursor position
 
@@ -206,91 +283,6 @@ namespace TextEditorApp
             return statusBarContainer;
         }
 
-        public Toolbar CreateToolbar()
-        {
-            var toolbar = new Toolbar
-            {
-                Style = ToolbarStyle.Icons
-            };
-
-            // add the color picker
-            ColorButton colorButton = new ColorButton
-            {
-                Rgba = new Gdk.RGBA { Red = 1, Green = 1, Blue = 1, Alpha = 0 },
-                UseAlpha = true
-            };
-            colorButton.ColorSet += OnColorSet;
-
-            ToolItem colorItem = new ToolItem();
-            colorItem.Add(colorButton);
-            toolbar.Add(colorItem);
-
-            return toolbar;
-        }
-
-        public MenuBar CreateMenuBar()
-        {
-            // Menu bar
-            MenuBar menuBar = new MenuBar();
-
-            // File Menu
-            Menu fileMenu = new Menu();
-            MenuItem file = new MenuItem("File");
-            MenuItem open = new MenuItem("Open");
-            MenuItem save = new MenuItem("Save");
-            MenuItem quit = new MenuItem("Quit");
-
-            open.Activated += OnOpen;
-            save.Activated += OnSave;
-            quit.Activated += (sender, e) => Application.Quit();
-
-            fileMenu.Append(open);
-            fileMenu.Append(save);
-            fileMenu.Append(new SeparatorMenuItem());
-            fileMenu.Append(quit);
-
-            file.Submenu = fileMenu;
-
-            menuBar.Append(file);
-
-            // Edit Menu
-            // Menu editMenu = new Menu();
-            // MenuItem edit = new MenuItem("Edit");
-            // MenuItem undo = new MenuItem("Undo");
-            // MenuItem redo = new MenuItem("Redo");
-
-            // undo.Activated += OnUndo;
-            // redo.Activated += OnRedo;
-
-            // editMenu.Append(undo);
-            // editMenu.Append(redo);
-            // edit.Submenu = editMenu;
-            // menuBar.Append(edit);
-
-            // Encoding Menu
-            Menu EncodingMenu = new Menu();
-            MenuItem encoding = new MenuItem("Encoding");
-            MenuItem utf8 = new MenuItem("UTF-8");
-            MenuItem utf16 = new MenuItem("UTF-16");
-            MenuItem utf32 = new MenuItem("UTF-32");
-            MenuItem ascii = new MenuItem("ASCII");
-
-            utf8.Activated += OnUtf8;
-            utf16.Activated += OnUtf16;
-            utf32.Activated += OnUtf32;
-            ascii.Activated += OnAscii;
-
-            EncodingMenu.Append(utf8);
-            EncodingMenu.Append(utf16);
-            EncodingMenu.Append(utf32);
-            EncodingMenu.Append(ascii);
-
-            encoding.Submenu = EncodingMenu;
-            menuBar.Append(encoding);
-
-            return menuBar;
-        }
-
 
         public void OnOpen(object? sender, EventArgs args)
         {
@@ -306,12 +298,34 @@ namespace TextEditorApp
             if (fc.Run() == (int)ResponseType.Accept)
             {
                 currentFilePath = fc.Filename;
-                textView!.Buffer.Text = File.ReadAllText(currentFilePath, currentEncoding);
-                UpdateEncodingLabel();
+
+                try
+                {
+                    textView!.Buffer.Text = File.ReadAllText(currentFilePath, currentEncoding);
+                    UpdateEncodingLabel();
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    ShowErrorDialog("Access denied", $"You don't have permission to open '{currentFilePath}'.");
+                }
+                catch (Exception ex)
+                {
+                    ShowErrorDialog("Error opening file", ex.Message);
+                }
             }
 
             fc.Destroy();
         }
+
+        private void ShowErrorDialog(string title, string message)
+        {
+            MessageDialog md = new MessageDialog(null,
+                DialogFlags.Modal, MessageType.Error, ButtonsType.Ok, message);
+            md.Title = title;
+            md.Run();
+            md.Destroy();
+        }
+
 
 
         public void OnSave(object? sender, EventArgs args)
@@ -348,49 +362,6 @@ namespace TextEditorApp
                 File.WriteAllText(currentFilePath, textView!.Buffer.Text, currentEncoding);
             }
         }
-
-        // the undo and redo functions
-        // public void OnTextChanged(object sender, EventArgs e)
-        // {
-        //     if (stopHistory) return;
-
-        //     string currentText = textView.Buffer.Text;
-        //     if (undoStack.Count == 0 || undoStack.Peek() != currentText)
-        //     {
-        //         undoStack.Push(currentText);
-        //         redoStack.Clear();
-        //     }
-        // }
-
-        // public void OnUndo(object sender, EventArgs e)
-        // {
-        //     if (undoStack.Count > 1)
-        //     {
-        //         stopHistory = true;
-
-        //         string current = undoStack.Pop();
-        //         redoStack.Push(current);
-
-        //         string prev = undoStack.Peek();
-        //         textView.Buffer.Text = prev;
-
-        //         stopHistory = false;
-        //     }
-        // }
-
-        // public void OnRedo(object sender, EventArgs e)
-        // {
-        //     if (redoStack.Count > 0)
-        //     {
-        //         stopHistory = true;
-
-        //         string redoText = redoStack.Pop();
-        //         undoStack.Push(redoText);
-        //         textView.Buffer.Text = redoText;
-
-        //         stopHistory = false;
-        //     }
-        // }
 
         public void OnUtf8(object? sender, EventArgs e) { currentEncoding = Encoding.UTF8; UpdateEncodingLabel(); }
         public void OnUtf16(object? sender, EventArgs e) { currentEncoding = Encoding.Unicode; UpdateEncodingLabel(); }
@@ -468,7 +439,7 @@ namespace TextEditorApp
 
 
 
-        // tge delete line function
+        // the delete line function
         public void DeleteCurrentLine()
         {
             TextIter cursorIter = textView!.Buffer.GetIterAtMark(textView.Buffer.InsertMark);
